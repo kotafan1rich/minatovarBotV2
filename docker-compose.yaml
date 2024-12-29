@@ -1,0 +1,37 @@
+services:
+  bot:
+    container_name: minatovar_bot
+    build: ./minatovar_bot
+    restart: always
+    volumes:
+      - ./data:/data
+    depends_on:
+      - redis
+    env_file:
+      - .env
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./redis/users.acl:/usr/local/etc/redis/users.acl
+    expose:
+      - 6379
+    environment:
+      - REDIS_PASSWORD=2007Fj2007
+      - REDIS_USER=minatovar
+      - REDIS_USER_PASSWORD=2007Fj2007
+    command: redis-server /usr/local/etc/redis/redis.conf --aclfile /usr/local/etc/redis/users.acl  
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "2007Fj2007", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+volumes:
+  redis_data:
