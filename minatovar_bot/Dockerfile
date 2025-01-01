@@ -6,9 +6,12 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Устанавливаем зависимости
+COPY requirements.txt .
+
+# Устанавливаем зависимости
+RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Копируем исходный код бота в контейнер
 COPY . .
-# Команда для запуска бота
-CMD ["python", "src/main.py"]
+
+RUN chmod a+x docker/*.sh

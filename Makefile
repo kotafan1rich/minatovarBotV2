@@ -14,9 +14,11 @@ logs:
 	docker-compose -f $(DOCKER_COMPOSE_FILE) logs -f
 
 clean:
-	docker-compose -f $(DOCKER_COMPOSE_FILE) down --volumes --rmi al
+	docker-compose -f $(DOCKER_COMPOSE_FILE) down --volumes --rmi all
 
 rebuild: down build up
+
+reup: down up
 
 help:
 	@echo "Доступные цели:"

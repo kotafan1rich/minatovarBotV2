@@ -2,33 +2,41 @@
 # vim: set fileencoding=UTF-8
 import asyncio
 import logging
-import os
-
-from config import DATA_FILE
+from aiogram.types import BotCommand
 from create_bot import bot, dp
-from handlers import client, admin
-from db.dals import DataDAL
+from handlers import client, admin, orders
+from db.dals import SettingsDAL
+from db.session import async_session
+from middlewares.middleware import (
+    DBSessionMiddleware,
+    StartMiddleware,
+    CallbackDataMiddleware,
+)
 
 logging.basicConfig(level=logging.INFO)
 
-client.register_handlers_client(dp)
-
-dp.include_router(admin.admin_router)
-
 
 async def on_startapp():
-    default_data = {"current_rate": None, "cloth_price": None, "shoes_price": None}
-    if not os.path.exists(DATA_FILE):
-        await DataDAL().save_data(default_data)
-    else:
-        data = await DataDAL().load_data()
-        if not data:
-            DataDAL().save_data(default_data)
+    await bot.set_my_commands([BotCommand(command="/start", description="Начать")])
+    async with async_session() as session:
+        settings_dal = SettingsDAL(session)
+        if not await settings_dal.param_exists("current_rate"):
+            await settings_dal.set_param("current_rate", 0.0)
+        if not await settings_dal.param_exists("shoes_price"):
+            await settings_dal.set_param("shoes_price", 0.0)
+        if not await settings_dal.param_exists("cloth_price"):
+            await settings_dal.set_param("cloth_price", 0.0)
 
 
 async def main():
-    await on_startapp()
+    await dp.emit_startup(await on_startapp())
     await bot.delete_webhook()
+    dp.update.outer_middleware(DBSessionMiddleware())
+    admin.admin_router.callback_query.middleware(CallbackDataMiddleware())
+    client.client_router.message.middleware(StartMiddleware())
+    dp.include_router(client.client_router)
+    dp.include_router(orders.order_roter)
+    dp.include_router(admin.admin_router)
     await dp.start_polling(bot)
 
 
