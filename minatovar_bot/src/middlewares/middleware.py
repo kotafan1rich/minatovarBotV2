@@ -1,4 +1,3 @@
-import logging
 from db.session import async_session
 from typing import Any, Callable, Dict, Awaitable
 from aiogram import BaseMiddleware
@@ -64,5 +63,5 @@ class CallbackDataMiddleware(BaseMiddleware):
         if isinstance(event, CallbackQuery):
             callback_data = event.data.split("_", maxsplit=1)
             data["calback_key"] = callback_data[0]
-            data["calback_arg"] = callback_data[1]
+            data["calback_arg"] = callback_data[1] if len(callback_data) > 1 else ""
         return await handler(event, data)

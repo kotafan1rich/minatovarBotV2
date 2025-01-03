@@ -18,6 +18,19 @@ main_admin_kb = ReplyKeyboardMarkup(
 )
 
 
+def admin_menu_inline():
+    all_active_orders_b = InlineKeyboardButton(
+        text="Активные заказы", callback_data="admin_active"
+    )
+    all_completed_orders_b = InlineKeyboardButton(
+        text="Завершенные заказы", callback_data="admin_completed"
+    )
+    menu_b = InlineKeyboardButton(text="Меню", callback_data="menu")
+
+    bottons = [[all_active_orders_b], [all_completed_orders_b], [menu_b]]
+    return InlineKeyboardMarkup(inline_keyboard=bottons)
+
+
 def get_info_order_inline(id: int):
     change_status_b = InlineKeyboardButton(
         text="Изменить статус", callback_data=f"status_{id}"

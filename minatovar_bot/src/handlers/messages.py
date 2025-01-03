@@ -46,6 +46,7 @@ def confrim_order(order: Order):
     return f"""Проверьте:
 Ссылка: {order.url}
 Размер: {order.size}
+Тип: {order.type_item}
 Цена (RUB): {order.price_rub}₽
 Цена (CNY): {order.price_cny}¥
 Адрес: {order.addres}

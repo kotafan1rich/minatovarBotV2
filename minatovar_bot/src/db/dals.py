@@ -1,4 +1,5 @@
 from typing import Union
+
 from sqlalchemy import delete, exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,24 +95,34 @@ class OrderDAL(BaseDAL):
         return order
 
     async def get_completed_orders_for_user(self, user_id: int):
-        query = select(Order.price_rub).where(
-            Order.status == OrderStatus.COMPLETED, Order.user_id == user_id
+        query = (
+            select(Order.price_rub)
+            .where(Order.status == OrderStatus.COMPLETED, Order.user_id == user_id)
+            .order_by(Order.id)
         )
         result = await self.db_session.execute(query)
         return result.scalars().all()
 
     async def get_orders_for_user(self, user_id: int):
-        query = select(Order).where(Order.user_id == user_id)
+        query = select(Order).where(Order.user_id == user_id).order_by(Order.id)
         result = await self.db_session.execute(query)
         return result.scalars().all()
 
     async def get_completed_orders(self):
-        query = select(Order).where(Order.status == OrderStatus.COMPLETED)
+        query = (
+            select(Order)
+            .where(Order.status == OrderStatus.COMPLETED)
+            .order_by(Order.id)
+        )
         result = await self.db_session.execute(query)
         return result.scalars().all()
 
     async def get_all_active_orders(self):
-        query = select(Order).where(Order.status != OrderStatus.COMPLETED)
+        query = (
+            select(Order)
+            .where(Order.status != OrderStatus.COMPLETED)
+            .order_by(Order.id)
+        )
         result = await self.db_session.execute(query)
         return result.scalars().all()
 

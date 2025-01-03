@@ -5,17 +5,12 @@ from create_bot import bot
 from db.dals import OrderDAL, UserDAL
 from db.models import Order, OrderTypeItem
 from keyboards import (
-    confrim_b,
-    get_cloth_b,
     get_shoes_b,
-    kb_client_cancel,
-    kb_client_get_type,
-    kb_client_main,
-    kb_oredr_confrim,
-    create_order_b,
-    order_b,
-    kb_orders_menu,
-    my_orders_b
+    main_menu_inline_kb,
+    order_menu_inline,
+    get_type_item_inline,
+    confrim_inline,
+    get_menu_inline,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.orders import calculate_rub_price, is_valid_link
@@ -34,38 +29,48 @@ class FSMOrder(StatesGroup):
     confrim = State()
 
 
-@order_roter.message(F.text == order_b.text)
-async def order_menu(message: types.Message):
-    await bot.send_message(
-        message.from_user.id, "Что дальше?", reply_markup=kb_orders_menu
+@order_roter.callback_query(F.data.startswith("orders"))
+async def order_menu(call: types.CallbackQuery):
+    await bot.edit_message_text(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id,
+        text="Что дальше?",
+        reply_markup=order_menu_inline(),
     )
 
 
-@order_roter.message(F.text == my_orders_b.text)
-async def get_my_orders(message: types.Message, db_session: AsyncSession):
-    user_id = message.from_user.id
+@order_roter.callback_query(F.data.startswith("myorders"))
+async def get_my_orders(call: types.CallbackQuery, db_session: AsyncSession):
+    user_id = call.from_user.id
     order_dal = OrderDAL(db_session)
     orders = await order_dal.get_orders_for_user(user_id)
     if orders:
+        await call.answer()
         for order in orders:
             await bot.send_message(user_id, get_order(order))
     else:
-        await bot.send_message(user_id, "У вас нет заказов")
+        await bot.edit_message_text(
+            chat_id=user_id,
+            message_id=call.message.message_id,
+            text="У вас нет заказов",
+            reply_markup=order_menu_inline(),
+        )
 
 
-@order_roter.message(F.text == create_order_b.text)
-async def create_order(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    if message.from_user.username:
+@order_roter.callback_query(F.data.startswith("createorder"))
+async def create_order(call: types.CallbackQuery, state: FSMContext):
+    user_id = call.from_user.id
+    await call.answer()
+    if call.from_user.username:
         await bot.send_message(
-            user_id, "Отпрвьте url товара", reply_markup=kb_client_cancel
+            user_id, "Отпрвьте url товара", reply_markup=get_menu_inline()
         )
         await state.set_state(FSMOrder.url)
     else:
         await bot.send_message(
             user_id,
             "Установите username и повторите попытку",
-            reply_markup=kb_client_main,
+            reply_markup=get_menu_inline(),
         )
 
 
@@ -76,23 +81,22 @@ async def get_url(messgae: types.Message, state: FSMContext):
     if is_valid_link(url):
         await state.update_data(url=url)
         await bot.send_message(
-            user_id, "Укажите тип товара", reply_markup=kb_client_get_type
+            user_id, "Укажите тип товара", reply_markup=get_type_item_inline()
         )
         await state.set_state(FSMOrder.type_item)
     else:
         await bot.send_message(
-            user_id, "Некорректная ссылка", reply_markup=kb_client_cancel
+            user_id, "Некорректная ссылка", reply_markup=get_menu_inline()
         )
 
 
-@order_roter.message(
-    FSMOrder.type_item, F.text.in_([get_shoes_b.text, get_cloth_b.text])
-)
-async def get_type_item(messgae: types.Message, state: FSMContext):
-    await state.update_data(type_item=messgae.text)
+@order_roter.callback_query(FSMOrder.type_item, F.data.startswith("type_"))
+async def get_type_item(call: types.CallbackQuery, calback_arg: str, state: FSMContext):
+    await state.update_data(type_item=calback_arg)
     await state.set_state(FSMOrder.addres)
+    await call.answer()
     await bot.send_message(
-        messgae.from_user.id, "Отправьте адрес", reply_markup=kb_client_cancel
+        call.from_user.id, "Отправьте адрес", reply_markup=get_menu_inline()
     )
 
 
@@ -101,7 +105,7 @@ async def get_addres(messgae: types.Message, state: FSMContext):
     addres = messgae.text
     await state.update_data(addres=addres)
     await bot.send_message(
-        messgae.from_user.id, "Отправьте цену", reply_markup=kb_client_cancel
+        messgae.from_user.id, "Отправьте цену", reply_markup=get_menu_inline()
     )
     await state.set_state(FSMOrder.price_cny)
 
@@ -111,7 +115,7 @@ async def get_prcie(messgae: types.Message, state: FSMContext):
     price = int(messgae.text)
     await state.update_data(price_cny=price)
     await bot.send_message(
-        messgae.from_user.id, "Отправьте размер", reply_markup=kb_client_cancel
+        messgae.from_user.id, "Отправьте размер", reply_markup=get_menu_inline()
     )
     await state.set_state(FSMOrder.size)
 
@@ -133,13 +137,15 @@ async def get_size(messgae: types.Message, state: FSMContext, db_session: AsyncS
     data["price_rub"] = res_price_rub
     await state.set_data(data)
     order = confrim_order(Order(**data))
-    await bot.send_message(user_id, order, reply_markup=kb_oredr_confrim)
+    await bot.send_message(user_id, order, reply_markup=confrim_inline())
     await state.set_state(FSMOrder.confrim)
 
 
-@order_roter.message(FSMOrder.confrim, F.text == confrim_b.text)
-async def confrim(messgae: types.Message, state: FSMContext, db_session: AsyncSession):
-    user_id = messgae.from_user.id
+@order_roter.callback_query(FSMOrder.confrim, F.data.startswith("confrim"))
+async def confrim(
+    call: types.CallbackQuery, state: FSMContext, db_session: AsyncSession
+):
+    user_id = call.from_user.id
     user_dal = UserDAL(db_session)
     order_dal = OrderDAL(db_session)
     data = await state.get_data()
@@ -147,13 +153,14 @@ async def confrim(messgae: types.Message, state: FSMContext, db_session: AsyncSe
         data["type_item"] = OrderTypeItem.SHOES
     else:
         data["type_item"] = OrderTypeItem.CLOTH
-    await user_dal.update_user(user_id=user_id, username=messgae.from_user.username)
+    await user_dal.update_user(user_id=user_id, username=call.from_user.username)
     created_order = await order_dal.add_order(user_id=user_id, **data)
     res = get_order(created_order)
 
+    await call.answer()
     await bot.send_message(
         user_id,
         res,
-        reply_markup=kb_client_main,
     )
     await state.clear()
+    await bot.send_message(user_id, "Главное меню", reply_markup=main_menu_inline_kb())

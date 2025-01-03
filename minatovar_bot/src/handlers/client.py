@@ -7,20 +7,16 @@ from create_bot import bot
 from db.dals import ReferralDAL, SettingsDAL
 from keyboards import (
     cancel_b,
-    get_cloth_b,
-    get_current_rate_b,
-    get_price_b,
-    get_shoes_b,
-    help_b,
-    kb_client_get_type,
-    kb_client_main,
-    my_referrals_b,
-    referral_b,
-    referral_menu_b,
-    kb_client_referral_menu,
+    main_menu_inline_kb,
+    get_menu_inline,
+    get_referral_menu_inline,
+    get_type_item_inline,
 )
 from middlewares.middleware import StartMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from db.models import OrderTypeItem
+
 
 from .messages import (
     BOT_IS_UNVAILABLE,
@@ -46,12 +42,28 @@ class FSMGetPrice(StatesGroup):
 
 @client_router.message(Command("start"), flags={"start": True})
 async def start(message: types.Message):
-    await bot.send_message(message.from_user.id, START, reply_markup=kb_client_main)
+    await bot.send_message(
+        message.from_user.id, START, reply_markup=main_menu_inline_kb()
+    )
 
 
-@client_router.message(F.text == help_b.text)
-async def help(message: types.Message):
-    await bot.send_message(message.from_user.id, HELP, reply_markup=kb_client_main)
+@client_router.callback_query(F.data.startswith("menu"))
+async def get_menu(call: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await bot.edit_message_text(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id,
+        text="Что дальше?",
+        reply_markup=main_menu_inline_kb(),
+    )
+
+
+@client_router.callback_query(F.data.startswith("help"))
+async def help(call: types.CallbackQuery):
+    await call.answer()
+    await bot.send_message(
+        call.from_user.id, HELP, reply_markup=main_menu_inline_kb()
+    )
 
 
 @client_router.message(F.text == cancel_b.text)
@@ -61,24 +73,26 @@ async def cancel_handler(message: types.Message, state: FSMContext) -> None:
         await state.clear()
     await message.answer(
         "Отмена",
-        reply_markup=kb_client_main,
+        reply_markup=main_menu_inline_kb(),
     )
 
 
-@client_router.message(F.text == get_price_b.text)
-async def get_type(message: types.Message, state: FSMContext):
+@client_router.callback_query(F.data.startswith("getprice"))
+async def get_type(call: types.CallbackQuery, state: FSMContext):
     await state.set_state(FSMGetPrice.get_type_state)
-    await bot.send_message(
-        message.from_user.id, TYPE_ITEM, reply_markup=kb_client_get_type
+    await bot.edit_message_text(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id,
+        text=TYPE_ITEM,
+        reply_markup=get_type_item_inline(),
     )
 
 
-@client_router.message(
-    FSMGetPrice.get_type_state,
-    F.text.in_((get_shoes_b.text, get_cloth_b.text)),
-)
-async def set_price_state(message: types.Message, state: FSMContext):
-    if message.text == get_shoes_b.text:
+@client_router.callback_query(FSMGetPrice.get_type_state, F.data.startswith("type_"))
+async def set_price_state(
+    call: types.CallbackQuery, state: FSMContext, calback_arg: str
+):
+    if calback_arg == OrderTypeItem.SHOES.value:
         media_group = [
             types.InputMediaPhoto(
                 media=types.FSInputFile(f"{STATIC_FILES}/shoes_price_2.jpg")
@@ -100,28 +114,33 @@ async def set_price_state(message: types.Message, state: FSMContext):
             ),
         ]
         await state.set_state(FSMGetPrice.cloth_state)
-    await bot.send_media_group(message.from_user.id, media=media_group)
+    await call.answer()
+    await bot.send_media_group(call.from_user.id, media=media_group)
 
 
 @client_router.message(FSMGetPrice.shoes_state)
 async def send_shoes_price(message: types.Message, state: FSMContext, db_session):
+    user_id = message.from_user.id
     await state.clear()
     price = int(message.text)
     delivery_price = await SettingsDAL(db_session).get_param("shoes_price")
     current_rate = await SettingsDAL(db_session).get_param("current_rate")
     if delivery_price and current_rate:
         result_price = round(price * current_rate + delivery_price, 2)
-
         text = send_price_mes(result_price)
-        await bot.send_message(message.from_user.id, text, reply_markup=kb_client_main)
+        await bot.send_message(
+            user_id, text
+        )
     else:
         await bot.send_message(
-            message.from_user.id, BOT_IS_UNVAILABLE, reply_markup=kb_client_main
+            user_id, BOT_IS_UNVAILABLE
         )
+    await bot.send_message(user_id, "Главное меню", reply_markup=main_menu_inline_kb())
 
 
 @client_router.message(FSMGetPrice.cloth_state)
 async def send_cloth_price(message: types.Message, state: FSMContext, db_session):
+    user_id = message.from_user.id
     await state.clear()
     price = int(message.text)
     delivery_price = await SettingsDAL(db_session).get_param("cloth_price")
@@ -130,48 +149,58 @@ async def send_cloth_price(message: types.Message, state: FSMContext, db_session
         result_price = round(price * current_rate + delivery_price, 2)
 
         text = send_price_mes(result_price)
-        await bot.send_message(message.from_user.id, text, reply_markup=kb_client_main)
+        await bot.send_message(
+            user_id, text
+        )
     else:
         await bot.send_message(
-            message.from_user.id, BOT_IS_UNVAILABLE, reply_markup=kb_client_main
+            user_id, BOT_IS_UNVAILABLE
         )
+    await bot.send_message(user_id, "Главное меню", reply_markup=main_menu_inline_kb())
 
 
-@client_router.message(F.text == get_current_rate_b.text)
-async def get_current_rate(message: types.Message, db_session):
+
+@client_router.callback_query(F.data.startswith("getrate"))
+async def get_current_rate(call: types.CallbackQuery, db_session):
+    await call.answer()
     if current_rate := await SettingsDAL(db_session).get_param("current_rate"):
         await bot.send_message(
-            message.from_user.id,
+            call.from_user.id,
             send_current_rate_mes(current_rate),
-            reply_markup=kb_client_main,
+            reply_markup=get_menu_inline(),
         )
     else:
         await bot.send_message(
-            message.from_user.id, BOT_IS_UNVAILABLE, reply_markup=kb_client_main
+            call.from_user.id, BOT_IS_UNVAILABLE, reply_markup=main_menu_inline_kb()
         )
 
 
-@client_router.message(F.text == referral_menu_b.text)
-async def referral_menu(message: types.Message):
+@client_router.callback_query(F.data.startswith("referralmenu"))
+async def referral_menu(call: types.CallbackQuery):
+    await call.answer()
     await bot.send_message(
-        message.from_user.id, "Что дальше?", reply_markup=kb_client_referral_menu
+        call.from_user.id, "Что дальше?", reply_markup=get_referral_menu_inline()
     )
 
 
-@client_router.message(F.text == referral_b.text)
-async def get_refferal_link(message: types.Message):
+@client_router.callback_query(F.data.startswith("referralurl"))
+async def get_refferal_link(call: types.CallbackQuery):
     info_bot = await bot.get_me()
-    await bot.send_message(
-        message.from_user.id,
-        refferal_link(bot_username=info_bot.username, user_id=message.from_user.id),
-        reply_markup=kb_client_main,
+    await bot.edit_message_text(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id,
+        text=refferal_link(bot_username=info_bot.username, user_id=call.from_user.id),
+        reply_markup=get_menu_inline(),
     )
 
 
-@client_router.message(F.text == my_referrals_b.text)
-async def get_my_referrals(message: types.Message, db_session: AsyncSession):
+@client_router.callback_query(F.data.startswith("myreferrals"))
+async def get_my_referrals(call: types.CallbackQuery, db_session: AsyncSession):
     referral_dal = ReferralDAL(db_session)
-    referrals = await referral_dal.get_refferals(int(message.from_user.id))
-    await bot.send_message(
-        message.from_user.id, count_referrals(referrals), reply_markup=kb_client_main
+    referrals = await referral_dal.get_refferals(int(call.from_user.id))
+    await bot.edit_message_text(
+        chat_id=call.from_user.id,
+        message_id=call.message.message_id,
+        text=count_referrals(referrals),
+        reply_markup=get_menu_inline(),
     )
